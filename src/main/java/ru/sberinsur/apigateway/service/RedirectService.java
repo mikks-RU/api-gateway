@@ -1,5 +1,6 @@
 package ru.sberinsur.apigateway.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -20,6 +21,7 @@ import java.util.Optional;
 
 @Service
 @Transactional
+@Slf4j
 public class RedirectService {
 
     @Autowired
@@ -27,11 +29,6 @@ public class RedirectService {
 
     public List<RedirectEndpoint> getAllRedirects() {
         return redirectEndpointRepository.findAll();
-    }
-
-    public RedirectEndpoint getRedirectById(Long id) {
-        return redirectEndpointRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Redirect not found with id: " + id));
     }
 
     public RedirectEndpoint addRedirect(RedirectEndpoint redirectEndpoint) {

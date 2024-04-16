@@ -8,15 +8,17 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import ru.sberinsur.apigateway.cache.RedirectCache;
+import ru.sberinsur.apigateway.model.RedirectEndpoint;
 import ru.sberinsur.apigateway.service.RedirectService;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Configuration
 @Slf4j
@@ -25,6 +27,9 @@ public class WebConfig implements WebMvcConfigurer {
     @Autowired
     private RedirectService redirectService;
 
+    @Autowired
+    private RedirectCache redirectCache;
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new HandlerInterceptor() {
@@ -32,21 +37,22 @@ public class WebConfig implements WebMvcConfigurer {
             public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
                     throws Exception {
                 String sourcePath = request.getRequestURI();
-                String targetUrl = redirectService.getTargetUrl(sourcePath);
+                RedirectEndpoint redirectEndpoint = redirectCache.getRedirect(sourcePath);
 
-                if (targetUrl != null) {
+                if (redirectEndpoint != null) {
                     // Копируем заголовки и тело запроса
-                    Map<String, String> headers = new HashMap<>();
-                    Enumeration<String> headerNames = request.getHeaderNames();
-                    while (headerNames.hasMoreElements()) {
-                        String headerName = headerNames.nextElement();
-                        headers.put(headerName, request.getHeader(headerName));
-                    }
+                    Map<String, String> headers = Collections.list(request.getHeaderNames())
+                            .stream()
+                            .collect(Collectors.toMap(
+                                    Function.identity(),
+                                    request::getHeader
+                            ));
 
                     byte[] body = getRequestBody(request).getBytes();
 
                     // Перенаправляем запрос на целевой URL
-                    ResponseEntity<byte[]> targetResponseEntity = redirectService.forwardRequest(targetUrl, request.getMethod(), headers, body);
+                    ResponseEntity<byte[]> targetResponseEntity = redirectService.forwardRequest(
+                            redirectEndpoint.getTargetUrl(), request.getMethod(), headers, body);
 
                     // Устанавливаем статус и тело ответа
                     response.setStatus(targetResponseEntity.getStatusCodeValue());
@@ -65,7 +71,7 @@ public class WebConfig implements WebMvcConfigurer {
                     });
 
                     // Записываем тело ответа в OutputStream
-                    response.getOutputStream().write(targetResponseEntity.getBody());
+                    response.getOutputStream().write(Objects.requireNonNull(targetResponseEntity.getBody()));
                     response.getOutputStream().flush();
 
                     return false;
@@ -75,16 +81,6 @@ public class WebConfig implements WebMvcConfigurer {
                 return true;
             }
         });
-    }
-
-    private Map<String, String> getRequestHeaders(HttpServletRequest request) {
-        Map<String, String> headers = new HashMap<>();
-        Enumeration<String> headerNames = request.getHeaderNames();
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            headers.put(headerName, request.getHeader(headerName));
-        }
-        return headers;
     }
 
     private String getRequestBody(HttpServletRequest request) {
