@@ -10,6 +10,7 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import ru.sberinsur.apigateway.cache.RedirectCache;
 import ru.sberinsur.apigateway.model.RedirectEndpoint;
+import ru.sberinsur.apigateway.service.LoggingService;
 import ru.sberinsur.apigateway.service.RedirectService;
 
 import javax.servlet.http.HttpServletRequest;
@@ -30,6 +31,9 @@ public class WebConfig implements WebMvcConfigurer {
     @Autowired
     private RedirectCache redirectCache;
 
+    @Autowired
+    private LoggingService loggingService;
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new HandlerInterceptor() {
@@ -40,27 +44,24 @@ public class WebConfig implements WebMvcConfigurer {
                 RedirectEndpoint redirectEndpoint = redirectCache.getRedirect(sourcePath);
 
                 if (redirectEndpoint != null) {
-                    // Копируем заголовки и тело запроса
+                    if (redirectEndpoint.isLogging()) {
+                        logRequest(request, redirectEndpoint.getServiceName(), "Request_start");
+                    }
+
                     Map<String, String> headers = Collections.list(request.getHeaderNames())
                             .stream()
-                            .collect(Collectors.toMap(
-                                    Function.identity(),
-                                    request::getHeader
-                            ));
+                            .collect(Collectors.toMap(Function.identity(), request::getHeader));
+                    String body = getRequestBody(request);
+                    ResponseEntity<byte[]> targetResponse = redirectService.forwardRequest(
+                            redirectEndpoint.getTargetUrl(), request.getMethod(), headers, body.getBytes(), redirectEndpoint);
 
-                    byte[] body = getRequestBody(request).getBytes();
+                    if (redirectEndpoint.isLogging()) {
+                        loggingService.sendLog( redirectEndpoint.getServiceName(), "Response_finish", new String(Objects.requireNonNull(targetResponse.getBody())));
+                    }
 
-                    // Перенаправляем запрос на целевой URL
-                    ResponseEntity<byte[]> targetResponseEntity = redirectService.forwardRequest(
-                            redirectEndpoint.getTargetUrl(), request.getMethod(), headers, body);
-
-                    // Устанавливаем статус и тело ответа
-                    response.setStatus(targetResponseEntity.getStatusCodeValue());
-
-                    // Копируем заголовки ответа
-                    HttpHeaders responseHeaders = targetResponseEntity.getHeaders();
-                    response.reset();
-                    responseHeaders.forEach((key, value) -> {
+                    // Set response details from targetResponse
+                    response.setStatus(targetResponse.getStatusCodeValue());
+                    targetResponse.getHeaders().forEach((key, value) -> {
                         if (value != null) {
                             value.forEach(v -> {
                                 if (v != null && !key.equalsIgnoreCase(HttpHeaders.TRANSFER_ENCODING)) {
@@ -69,31 +70,38 @@ public class WebConfig implements WebMvcConfigurer {
                             });
                         }
                     });
-
-                    // Записываем тело ответа в OutputStream
-                    response.getOutputStream().write(Objects.requireNonNull(targetResponseEntity.getBody()));
-                    response.getOutputStream().flush();
-
+                    response.getOutputStream().write(targetResponse.getBody());
                     return false;
                 }
 
-                // Возвращаем true, чтобы позволить дальнейшую обработку запроса
                 return true;
+            }
+
+            private String getRequestBody(HttpServletRequest request) {
+                String body = (String) request.getAttribute("cachedBody");
+                if (body == null) {
+                    StringBuilder sb = new StringBuilder();
+                    try (BufferedReader reader = request.getReader()) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            sb.append(line);
+                        }
+                        body = sb.toString();
+                        request.setAttribute("cachedBody", body);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Error reading request body", e);
+                    }
+                }
+                return body;
+            }
+
+
+            private void logRequest(HttpServletRequest request, String serviceName, String operation) {
+                String body = getRequestBody(request);
+                loggingService.sendLog(serviceName, operation, body);
             }
         });
     }
 
-    private String getRequestBody(HttpServletRequest request) {
-        try {
-            StringBuilder sb = new StringBuilder();
-            BufferedReader reader = request.getReader();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                sb.append(line);
-            }
-            return sb.toString();
-        } catch (IOException e) {
-            throw new RuntimeException("Error reading request body", e);
-        }
-    }
+
 }

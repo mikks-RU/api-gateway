@@ -27,6 +27,9 @@ public class RedirectService {
     @Autowired
     private RedirectEndpointRepository redirectEndpointRepository;
 
+    @Autowired
+    private LoggingService loggingService;
+
     public List<RedirectEndpoint> getAllRedirects() {
         return redirectEndpointRepository.findAll();
     }
@@ -35,12 +38,11 @@ public class RedirectService {
         return redirectEndpointRepository.save(redirectEndpoint);
     }
 
-    public String getTargetUrl(String sourcePath) {
-        Optional<RedirectEndpoint> redirect = redirectEndpointRepository.findBySourcePath(sourcePath);
-        return redirect.map(RedirectEndpoint::getTargetUrl).orElse(null);
-    }
+    public ResponseEntity<byte[]> forwardRequest(String targetUrl, String method, Map<String, String> headers, byte[] body, RedirectEndpoint endpoint) {
+        if (endpoint.isLogging()) {
+            loggingService.sendLog(endpoint.getServiceName(), "Request_finish", new String(body));
+        }
 
-    public ResponseEntity<byte[]> forwardRequest(String targetUrl, String method, Map<String, String> headers, byte[] body) {
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
 
@@ -51,22 +53,29 @@ public class RedirectService {
         restTemplate.setErrorHandler(new ResponseErrorHandler() {
             @Override
             public boolean hasError(org.springframework.http.client.ClientHttpResponse response) throws IOException {
-                return false; // Всегда возвращаем false, чтобы не бросать исключения
+                return false;  // Always return false to avoid throwing exceptions
             }
 
             @Override
             public void handleError(org.springframework.http.client.ClientHttpResponse response) throws IOException {
-                // Делаем ничего, так как мы хотим обрабатывать все ответы без исключений
+                // Do nothing, as we want to handle all responses without exceptions
             }
         });
 
-        try {
-            return restTemplate.exchange(targetUrl, httpMethod, httpEntity, byte[].class);
-        } catch (Exception e) {
-            // Если произошла любая ошибка, возвращаем ответ с HTTP-статусом 500 и телом ошибки
-            return new ResponseEntity<>(e.getMessage().getBytes(), HttpStatus.INTERNAL_SERVER_ERROR);
+        ResponseEntity<byte[]> response = restTemplate.exchange(targetUrl, httpMethod, httpEntity, byte[].class);
+
+        if (endpoint.isLogging()) {
+            loggingService.sendLog(endpoint.getServiceName(), "Response_start", new String(response.getBody()));
         }
 
+        return response;
     }
 
+    public Optional<RedirectEndpoint> findBySourcePath(String sourcePath) {
+        return redirectEndpointRepository.findBySourcePath(sourcePath);
+    }
+
+    public void deleteRedirect(String sourcePath) {
+        redirectEndpointRepository.deleteBySourcePath(sourcePath);
+    }
 }
