@@ -15,8 +15,8 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>2.6.3</version> <!-- Use the latest stable Spring Boot version -->
-        <relativePath/> <!-- lookup parent from repository -->
+        <version>2.6.3</version> <!-- Обновить до последней стабильной версии Spring Boot -->
+        <relativePath/>
     </parent>
 
     <properties>
@@ -24,6 +24,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <lombok.version>1.18.22</lombok.version>
+        <caffeine.version>2.9.0</caffeine.version>
     </properties>
 
     <dependencies>
@@ -43,7 +44,7 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>42.3.1</version> <!-- Use the latest stable version -->
+            <version>42.3.1</version> <!-- Использовать последнюю стабильную версию -->
         </dependency>
 
         <!-- Lombok -->
@@ -54,11 +55,30 @@
             <scope>provided</scope>
         </dependency>
 
-        <!-- Spring Boot Starter Test (Optional) -->
+        <!-- Spring Boot Starter Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
+        </dependency>
+
+        <!-- Caffeine cache -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>${caffeine.version}</version>
+        </dependency>
+
+        <!-- Asynchronous Operations -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context-support</artifactId>
+        </dependency>
+
+        <!-- Spring Boot Starter AOP для @Async -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
     </dependencies>
 

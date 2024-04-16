@@ -4,6 +4,13 @@ spring:
     username: postgres
     password: 1
     driver-class-name: org.postgresql.Driver
+    hikari:
+      minimum-idle: 10
+      maximum-pool-size: 100
+      idle-timeout: 10000
+      max-lifetime: 2000000
+      connection-timeout: 30000
+      pool-name: SpringHikariCP
   jpa:
     hibernate:
       ddl-auto: update
@@ -14,3 +21,8 @@ spring:
 
 server:
   port: 8081
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,application/json
+    min-response-size: 1024
+
