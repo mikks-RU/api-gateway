@@ -3,6 +3,7 @@ package ru.sberinsur.apigateway.config;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -15,9 +16,8 @@ import ru.sberinsur.apigateway.service.RedirectService;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.io.BufferedReader;
-import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -52,25 +52,18 @@ public class WebConfig implements WebMvcConfigurer {
                             .stream()
                             .collect(Collectors.toMap(Function.identity(), request::getHeader));
                     String body = getRequestBody(request);
-                    ResponseEntity<byte[]> targetResponse = redirectService.forwardRequest(
-                            redirectEndpoint.getTargetUrl(), request.getMethod(), headers, body.getBytes(), redirectEndpoint);
+                    redirectService.forwardRequestAsync(
+                                    redirectEndpoint.getTargetUrl(), request.getMethod(), headers, body.getBytes(), redirectEndpoint)
+                            .thenAccept(res -> {
+                                setResponseDetails(response, res);
+                            });
 
-                    if (redirectEndpoint.isLogging()) {
-                        loggingService.sendLog( redirectEndpoint.getServiceName(), "Response_finish", new String(Objects.requireNonNull(targetResponse.getBody())));
+                    // Apply cache control
+                    if (!response.containsHeader(HttpHeaders.CACHE_CONTROL)) {
+                        CacheControl cacheControl = CacheControl.maxAge(30, TimeUnit.MINUTES).cachePublic();
+                        response.setHeader(HttpHeaders.CACHE_CONTROL, cacheControl.getHeaderValue());
                     }
 
-                    // Set response details from targetResponse
-                    response.setStatus(targetResponse.getStatusCodeValue());
-                    targetResponse.getHeaders().forEach((key, value) -> {
-                        if (value != null) {
-                            value.forEach(v -> {
-                                if (v != null && !key.equalsIgnoreCase(HttpHeaders.TRANSFER_ENCODING)) {
-                                    response.addHeader(key, v);
-                                }
-                            });
-                        }
-                    });
-                    response.getOutputStream().write(targetResponse.getBody());
                     return false;
                 }
 
@@ -78,30 +71,39 @@ public class WebConfig implements WebMvcConfigurer {
             }
 
             private String getRequestBody(HttpServletRequest request) {
-                String body = (String) request.getAttribute("cachedBody");
-                if (body == null) {
-                    StringBuilder sb = new StringBuilder();
-                    try (BufferedReader reader = request.getReader()) {
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            sb.append(line);
-                        }
-                        body = sb.toString();
-                        request.setAttribute("cachedBody", body);
-                    } catch (IOException e) {
-                        throw new RuntimeException("Error reading request body", e);
+                StringBuilder sb = new StringBuilder();
+                try (Scanner scanner = new Scanner(request.getInputStream())) {
+                    while (scanner.hasNextLine()) {
+                        sb.append(scanner.nextLine());
                     }
+                } catch (Exception e) {
+                    log.error("Error reading request body", e);
                 }
-                return body;
+                return sb.toString();
             }
 
+            private void setResponseDetails(HttpServletResponse response, ResponseEntity<byte[]> res) {
+                response.setStatus(res.getStatusCodeValue());
+                res.getHeaders().forEach((key, value) -> {
+                    if (value != null) {
+                        value.forEach(v -> {
+                            if (!key.equalsIgnoreCase(HttpHeaders.TRANSFER_ENCODING)) {
+                                response.addHeader(key, v);
+                            }
+                        });
+                    }
+                });
+
+                try {
+                    response.getOutputStream().write(res.getBody());
+                } catch (Exception e) {
+                    log.error("Failed to write response body", e);
+                }
+            }
 
             private void logRequest(HttpServletRequest request, String serviceName, String operation) {
-                String body = getRequestBody(request);
-                loggingService.sendLog(serviceName, operation, body);
+                loggingService.sendLog(serviceName, operation, getRequestBody(request));
             }
         });
     }
-
-
 }

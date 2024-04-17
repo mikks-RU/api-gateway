@@ -2,6 +2,7 @@ package ru.sberinsur.apigateway.cache;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Configuration;
 import com.github.benmanes.caffeine.cache.Cache;
 import ru.sberinsur.apigateway.model.RedirectEndpoint;
@@ -17,8 +18,8 @@ public class RedirectCache {
     private RedirectEndpointRepository redirectEndpointRepository;
 
     @Autowired
-    @Qualifier("redirectEndpointCache")
-    private Cache<String, RedirectEndpoint> redirectCache;
+    @Qualifier("redirectCaffeineCache")
+    private Cache<String, RedirectEndpoint> caffeineCache;
 
     @PostConstruct
     public void setupCache() {
@@ -27,20 +28,12 @@ public class RedirectCache {
 
     public void loadRedirects() {
         List<RedirectEndpoint> redirectEndpoints = redirectEndpointRepository.findAll();
-        redirectEndpoints.forEach(endpoint -> redirectCache.put(endpoint.getSourcePath(), endpoint));
+        redirectEndpoints.forEach(endpoint -> caffeineCache.put(endpoint.getSourcePath(), endpoint));
     }
 
+    @Cacheable(cacheNames = "redirects", key = "#sourcePath")
     public RedirectEndpoint getRedirect(String sourcePath) {
-        return redirectCache.getIfPresent(sourcePath);
+        return caffeineCache.getIfPresent(sourcePath);
     }
 
-    public void updateRedirect(RedirectEndpoint redirectEndpoint) {
-        redirectCache.put(redirectEndpoint.getSourcePath(), redirectEndpoint);
-        redirectEndpointRepository.save(redirectEndpoint);
-    }
-
-    public void removeRedirect(String sourcePath) {
-        redirectCache.invalidate(sourcePath);
-        redirectEndpointRepository.deleteBySourcePath(sourcePath);
-    }
 }

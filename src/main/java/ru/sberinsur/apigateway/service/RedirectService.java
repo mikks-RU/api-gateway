@@ -1,12 +1,14 @@
 package ru.sberinsur.apigateway.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.ResponseErrorHandler;
@@ -15,34 +17,35 @@ import ru.sberinsur.apigateway.model.RedirectEndpoint;
 import ru.sberinsur.apigateway.repository.RedirectEndpointRepository;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 @Service
-@Transactional
 @Slf4j
 public class RedirectService {
+    @Autowired
+    private LoggingService loggingService;
 
     @Autowired
     private RedirectEndpointRepository redirectEndpointRepository;
 
     @Autowired
-    private LoggingService loggingService;
+    @Qualifier("redirectCaffeineCache")
+    private Cache<String, RedirectEndpoint> caffeineCache;
 
     public List<RedirectEndpoint> getAllRedirects() {
-        return redirectEndpointRepository.findAll();
+        return new ArrayList<>(caffeineCache.asMap().values());
     }
 
-    public RedirectEndpoint addRedirect(RedirectEndpoint redirectEndpoint) {
-        return redirectEndpointRepository.save(redirectEndpoint);
-    }
+    @Async
+    public CompletableFuture<ResponseEntity<byte[]>> forwardRequestAsync(String targetUrl, String method, Map<String, String> headers, byte[] body, RedirectEndpoint endpoint) {
 
-    public ResponseEntity<byte[]> forwardRequest(String targetUrl, String method, Map<String, String> headers, byte[] body, RedirectEndpoint endpoint) {
         if (endpoint.isLogging()) {
             loggingService.sendLog(endpoint.getServiceName(), "Request_finish", new String(body));
         }
-
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
 
@@ -68,14 +71,42 @@ public class RedirectService {
             loggingService.sendLog(endpoint.getServiceName(), "Response_start", new String(response.getBody()));
         }
 
-        return response;
+        return CompletableFuture.completedFuture(response);
     }
 
-    public Optional<RedirectEndpoint> findBySourcePath(String sourcePath) {
-        return redirectEndpointRepository.findBySourcePath(sourcePath);
+    @Transactional
+    public ResponseEntity<String> addRedirect(RedirectEndpoint redirectEndpoint) {
+        Optional<RedirectEndpoint> existingEndpoint = redirectEndpointRepository.findBySourcePath(redirectEndpoint.getSourcePath());
+        if (existingEndpoint.isPresent()) {
+            return ResponseEntity.badRequest().body("Redirect already exists");
+        } else {
+            RedirectEndpoint savedEndpoint = redirectEndpointRepository.save(redirectEndpoint);
+            caffeineCache.put(redirectEndpoint.getSourcePath(), savedEndpoint);
+            return ResponseEntity.ok("Redirect added successfully");
+        }
+    }
+    @Transactional
+    public ResponseEntity<String> updateRedirect(RedirectEndpoint redirectEndpoint) {
+        Optional<RedirectEndpoint> existingEndpoint = redirectEndpointRepository.findBySourcePath(redirectEndpoint.getSourcePath());
+        if (existingEndpoint.isPresent()) {
+            redirectEndpoint.setId(existingEndpoint.get().getId());
+            RedirectEndpoint updatedEndpoint = redirectEndpointRepository.save(redirectEndpoint);
+            caffeineCache.put(redirectEndpoint.getSourcePath(), updatedEndpoint);
+            return ResponseEntity.ok("Redirect updated successfully");
+        } else {
+            return ResponseEntity.badRequest().body("Redirect does not exist");
+        }
     }
 
-    public void deleteRedirect(String sourcePath) {
-        redirectEndpointRepository.deleteBySourcePath(sourcePath);
+    @Transactional
+    public ResponseEntity<String> deleteRedirect(String sourcePath) {
+        Optional<RedirectEndpoint> existingEndpoint = redirectEndpointRepository.findBySourcePath(sourcePath);
+        if (existingEndpoint.isPresent()) {
+            redirectEndpointRepository.deleteBySourcePath(sourcePath);
+            caffeineCache.invalidate(sourcePath);
+            return ResponseEntity.ok("Redirect deleted successfully");
+        } else {
+            return ResponseEntity.badRequest().body("Redirect does not exist");
+        }
     }
 }

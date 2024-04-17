@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
 public class CacheConfig {
 
     @Bean
-    public Cache<String, RedirectEndpoint> redirectEndpointCache() {
+    public Cache<String, RedirectEndpoint> redirectCaffeineCache() {
         return Caffeine.newBuilder()
                 .expireAfterWrite(10, TimeUnit.MINUTES)
                 .maximumSize(1000)

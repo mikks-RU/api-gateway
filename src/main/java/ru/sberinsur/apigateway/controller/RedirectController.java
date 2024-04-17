@@ -5,11 +5,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import ru.sberinsur.apigateway.model.RedirectEndpoint;
-import ru.sberinsur.apigateway.service.AsyncService;
 import ru.sberinsur.apigateway.service.RedirectService;
 
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/redirects")
@@ -18,18 +16,24 @@ public class RedirectController {
     @Autowired
     private RedirectService redirectService;
 
-    @Autowired
-    private AsyncService asyncService;
-
     @GetMapping
     public ResponseEntity<List<RedirectEndpoint>> getAllRedirects() {
-        List<RedirectEndpoint> redirects = redirectService.getAllRedirects();
-        return ResponseEntity.ok(redirects);
+        return ResponseEntity.ok(redirectService.getAllRedirects());
     }
 
-    @PostMapping
-    public CompletableFuture<ResponseEntity<RedirectEndpoint>> addRedirect(@RequestBody RedirectEndpoint redirectEndpoint) {
-        return asyncService.addRedirectAsync(redirectEndpoint);
+    @PutMapping
+    public ResponseEntity<String> addRedirect(@RequestBody RedirectEndpoint redirectEndpoint) {
+        return redirectService.addRedirect(redirectEndpoint);
+    }
+
+    @PatchMapping
+    public ResponseEntity<String> updateRedirect(@RequestBody RedirectEndpoint redirectEndpoint) {
+        return redirectService.updateRedirect(redirectEndpoint);
+    }
+
+    @DeleteMapping
+    public ResponseEntity<String> deleteRedirect(@RequestParam String sourcePath) {
+        return redirectService.deleteRedirect(sourcePath);
     }
 
 }

@@ -10,6 +10,7 @@ import java.util.Optional;
 public interface RedirectEndpointRepository extends JpaRepository<RedirectEndpoint, Long> {
 
     Optional<RedirectEndpoint> findBySourcePath(String sourcePath);
+    Optional<RedirectEndpoint> findById(Long id);
 
     void deleteBySourcePath(String sourcePath);
 }
