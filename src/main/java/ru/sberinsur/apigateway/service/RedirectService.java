@@ -44,7 +44,7 @@ public class RedirectService {
     public CompletableFuture<ResponseEntity<byte[]>> forwardRequestAsync(String targetUrl, String method, Map<String, String> headers, byte[] body, RedirectEndpoint endpoint) {
 
         if (endpoint.isLogging()) {
-            loggingService.sendLog(endpoint.getServiceName(), "Request_finish", new String(body));
+            loggingService.sendLog(endpoint.getServiceName(), "Request_out", new String(body));
         }
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
@@ -68,7 +68,7 @@ public class RedirectService {
         ResponseEntity<byte[]> response = restTemplate.exchange(targetUrl, httpMethod, httpEntity, byte[].class);
 
         if (endpoint.isLogging()) {
-            loggingService.sendLog(endpoint.getServiceName(), "Response_start", new String(response.getBody()));
+            loggingService.sendLog(endpoint.getServiceName(), "Response", new String(response.getBody()));
         }
 
         return CompletableFuture.completedFuture(response);

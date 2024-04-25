@@ -16,7 +16,9 @@ import ru.sberinsur.apigateway.service.RedirectService;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import java.util.*;
+import java.util.Collections;
+import java.util.Map;
+import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -44,14 +46,15 @@ public class WebConfig implements WebMvcConfigurer {
                 RedirectEndpoint redirectEndpoint = redirectCache.getRedirect(sourcePath);
 
                 if (redirectEndpoint != null) {
+                    String body = getRequestBody(request);
+
                     if (redirectEndpoint.isLogging()) {
-                        logRequest(request, redirectEndpoint.getServiceName(), "Request_start");
+                        logRequest(body, redirectEndpoint.getServiceName(), "Request_in");
                     }
 
                     Map<String, String> headers = Collections.list(request.getHeaderNames())
                             .stream()
                             .collect(Collectors.toMap(Function.identity(), request::getHeader));
-                    String body = getRequestBody(request);
                     redirectService.forwardRequestAsync(
                                     redirectEndpoint.getTargetUrl(), request.getMethod(), headers, body.getBytes(), redirectEndpoint)
                             .thenAccept(res -> {
@@ -101,8 +104,8 @@ public class WebConfig implements WebMvcConfigurer {
                 }
             }
 
-            private void logRequest(HttpServletRequest request, String serviceName, String operation) {
-                loggingService.sendLog(serviceName, operation, getRequestBody(request));
+            private void logRequest(String body, String serviceName, String operation) {
+                loggingService.sendLog(serviceName, operation, body);
             }
         });
     }
