@@ -5,12 +5,12 @@ spring:
     password: 1
     driver-class-name: org.postgresql.Driver
     hikari:
-      minimum-idle: 10
-      maximum-pool-size: 100
+      minimum-idle: 0
+      maximum-pool-size: 10
       idle-timeout: 10000
       max-lifetime: 2000000
       connection-timeout: 30000
-      pool-name: SpringHikariCP
+      pool-name: ApiGatewayHikariCP
   jpa:
     hibernate:
       ddl-auto: update
@@ -19,9 +19,14 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   kafka:
     producer:
-      bootstrap-servers: 192.168.1.242:9092
+      bootstrap-servers: sv-kfk-dev-01.sberinsur.local:9093,sv-kfk-dev-02.sberinsur.local:9093,sv-kfk-dev-03.sberinsur.local:9093
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        sasl.mechanism: "PLAIN"
+        security.protocol: "SASL_PLAINTEXT"
+        ssl.endpoint.identification.algorithm: "NONE"
+        sasl.jaas.config: "org.apache.kafka.common.security.plain.PlainLoginModule required username='fuse' password='UCWjTLZgjeEe';"
     topic:
       logs: redirect-logs  # Топик для логирования
 
