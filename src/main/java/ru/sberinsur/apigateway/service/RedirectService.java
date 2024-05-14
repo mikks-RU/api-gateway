@@ -4,19 +4,22 @@ import com.github.benmanes.caffeine.cache.Cache;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
+import ru.sberinsur.apigateway.exception.CustomResponseErrorHandler;
 import ru.sberinsur.apigateway.model.RedirectEndpoint;
 import ru.sberinsur.apigateway.repository.RedirectEndpointRepository;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -40,38 +43,48 @@ public class RedirectService {
         return new ArrayList<>(caffeineCache.asMap().values());
     }
 
-    @Async
     public CompletableFuture<ResponseEntity<byte[]>> forwardRequestAsync(String targetUrl, String method, Map<String, String> headers, byte[] body, RedirectEndpoint endpoint) {
-
-        if (endpoint.isLogging()) {
-            loggingService.sendLog(endpoint.getServiceName(), "Request_out", new String(body));
-        }
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
 
-        HttpMethod httpMethod = HttpMethod.valueOf(method);
         HttpEntity<byte[]> httpEntity = new HttpEntity<>(body, httpHeaders);
+        RestTemplate restTemplate = restTemplate();
 
-        RestTemplate restTemplate = new RestTemplate();
-        restTemplate.setErrorHandler(new ResponseErrorHandler() {
-            @Override
-            public boolean hasError(org.springframework.http.client.ClientHttpResponse response) throws IOException {
-                return false;  // Always return false to avoid throwing exceptions
+        try {
+            ResponseEntity<byte[]> response = restTemplate.exchange(targetUrl, HttpMethod.resolve(method), httpEntity, byte[].class);
+            if (endpoint.isLogging()) {
+                loggingService.sendLog(endpoint.getServiceName(), "Response", new String(response.getBody()));
             }
-
-            @Override
-            public void handleError(org.springframework.http.client.ClientHttpResponse response) throws IOException {
-                // Do nothing, as we want to handle all responses without exceptions
-            }
-        });
-
-        ResponseEntity<byte[]> response = restTemplate.exchange(targetUrl, httpMethod, httpEntity, byte[].class);
-
-        if (endpoint.isLogging()) {
-            loggingService.sendLog(endpoint.getServiceName(), "Response", new String(response.getBody()));
+            return CompletableFuture.completedFuture(response);
+        } catch (Exception e) {
+            log.error("Error forwarding request", e);
+            return CompletableFuture.completedFuture(createErrorResponse("Service unavailable", endpoint.getSourcePath(), HttpStatus.SERVICE_UNAVAILABLE));
         }
+    }
 
-        return CompletableFuture.completedFuture(response);
+
+    private ResponseEntity<byte[]> createErrorResponse(String message, String path, HttpStatus status) {
+        LocalDateTime now = LocalDateTime.now();
+        String formattedTimestamp = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"));
+
+        String errorJson = String.format("{\"timestamp\":\"%s\",\"status\":%d,\"error\":\"%s\",\"path\":\"%s\"}",
+                formattedTimestamp, status.value(), message, path);
+        byte[] responseBody = errorJson.getBytes();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.CONTENT_TYPE, "application/json");  // Установка заголовка Content-Type
+
+        return new ResponseEntity<>(responseBody, headers, status);
+    }
+
+
+    public RestTemplate restTemplate() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5000);  // 5 seconds
+        factory.setReadTimeout(10000);    // 10 seconds
+        RestTemplate restTemplate = new RestTemplate(factory);
+        restTemplate.setErrorHandler(new CustomResponseErrorHandler()); // Avoid throwing exceptions on 4xx and 5xx
+        return restTemplate;
     }
 
     @Transactional

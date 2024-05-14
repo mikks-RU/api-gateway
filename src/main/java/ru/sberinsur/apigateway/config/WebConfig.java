@@ -49,7 +49,7 @@ public class WebConfig implements WebMvcConfigurer {
                     String body = getRequestBody(request);
 
                     if (redirectEndpoint.isLogging()) {
-                        logRequest(body, redirectEndpoint.getServiceName(), "Request_in");
+                        logRequest(body, redirectEndpoint.getServiceName(), "Request");
                     }
 
                     Map<String, String> headers = Collections.list(request.getHeaderNames())
