@@ -6,21 +6,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.*;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 import ru.sberinsur.apigateway.exception.CustomResponseErrorHandler;
 import ru.sberinsur.apigateway.model.RedirectEndpoint;
 import ru.sberinsur.apigateway.repository.RedirectEndpointRepository;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,6 +43,14 @@ public class RedirectService {
         HttpHeaders httpHeaders = new HttpHeaders();
         headers.forEach(httpHeaders::add);
 
+        // Добавление аутентификационного заголовка, если требуется авторизация
+        if (endpoint.isAuth() && endpoint.getAuthType() != null && endpoint.getAuthValue() != null) {
+            String authHeaderValue = getAuthHeaderValue(endpoint);
+            if (authHeaderValue != null) {
+                httpHeaders.add(HttpHeaders.AUTHORIZATION, authHeaderValue);
+            }
+        }
+
         HttpEntity<byte[]> httpEntity = new HttpEntity<>(body, httpHeaders);
         RestTemplate restTemplate = restTemplate();
 
@@ -62,6 +66,16 @@ public class RedirectService {
         }
     }
 
+    private String getAuthHeaderValue(RedirectEndpoint endpoint) {
+        switch (endpoint.getAuthType()) {
+            case "Bearer":
+                return "Bearer " + endpoint.getAuthValue();
+            case "Basic":
+                return "Basic " + endpoint.getAuthValue();
+            default:
+                return null;
+        }
+    }
 
     private ResponseEntity<byte[]> createErrorResponse(String message, String path, HttpStatus status) {
         LocalDateTime now = LocalDateTime.now();
@@ -72,18 +86,17 @@ public class RedirectService {
         byte[] responseBody = errorJson.getBytes();
 
         HttpHeaders headers = new HttpHeaders();
-        headers.add(HttpHeaders.CONTENT_TYPE, "application/json");  // Установка заголовка Content-Type
+        headers.add(HttpHeaders.CONTENT_TYPE, "application/json; charset=UTF-8");
 
         return new ResponseEntity<>(responseBody, headers, status);
     }
 
-
     public RestTemplate restTemplate() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(5000);  // 5 seconds
-        factory.setReadTimeout(10000);    // 10 seconds
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(10000);
         RestTemplate restTemplate = new RestTemplate(factory);
-        restTemplate.setErrorHandler(new CustomResponseErrorHandler()); // Avoid throwing exceptions on 4xx and 5xx
+        restTemplate.setErrorHandler(new CustomResponseErrorHandler());
         return restTemplate;
     }
 
@@ -93,16 +106,23 @@ public class RedirectService {
         if (existingEndpoint.isPresent()) {
             return ResponseEntity.badRequest().body("Redirect already exists");
         } else {
+            if (redirectEndpoint.isAuth() && "Basic".equals(redirectEndpoint.getAuthType())) {
+                redirectEndpoint.setAuthValue(Base64.getEncoder().encodeToString(redirectEndpoint.getAuthValue().getBytes()));
+            }
             RedirectEndpoint savedEndpoint = redirectEndpointRepository.save(redirectEndpoint);
             caffeineCache.put(redirectEndpoint.getSourcePath(), savedEndpoint);
             return ResponseEntity.ok("Redirect added successfully");
         }
     }
+
     @Transactional
     public ResponseEntity<String> updateRedirect(RedirectEndpoint redirectEndpoint) {
         Optional<RedirectEndpoint> existingEndpoint = redirectEndpointRepository.findBySourcePath(redirectEndpoint.getSourcePath());
         if (existingEndpoint.isPresent()) {
             redirectEndpoint.setId(existingEndpoint.get().getId());
+            if (redirectEndpoint.isAuth() && "Basic".equals(redirectEndpoint.getAuthType())) {
+                redirectEndpoint.setAuthValue(Base64.getEncoder().encodeToString(redirectEndpoint.getAuthValue().getBytes()));
+            }
             RedirectEndpoint updatedEndpoint = redirectEndpointRepository.save(redirectEndpoint);
             caffeineCache.put(redirectEndpoint.getSourcePath(), updatedEndpoint);
             return ResponseEntity.ok("Redirect updated successfully");

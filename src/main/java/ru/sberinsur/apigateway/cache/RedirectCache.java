@@ -9,6 +9,7 @@ import ru.sberinsur.apigateway.model.RedirectEndpoint;
 import ru.sberinsur.apigateway.repository.RedirectEndpointRepository;
 
 import javax.annotation.PostConstruct;
+import java.util.Base64;
 import java.util.List;
 
 @Configuration
@@ -28,7 +29,13 @@ public class RedirectCache {
 
     public void loadRedirects() {
         List<RedirectEndpoint> redirectEndpoints = redirectEndpointRepository.findAll();
-        redirectEndpoints.forEach(endpoint -> caffeineCache.put(endpoint.getSourcePath(), endpoint));
+        redirectEndpoints.forEach(endpoint -> {
+            // Кодирование данных авторизации, если требуется
+            if (endpoint.isAuth() && "Basic".equals(endpoint.getAuthType())) {
+                endpoint.setAuthValue(Base64.getEncoder().encodeToString(endpoint.getAuthValue().getBytes()));
+            }
+            caffeineCache.put(endpoint.getSourcePath(), endpoint);
+        });
     }
 
     @Cacheable(cacheNames = "redirects", key = "#sourcePath")

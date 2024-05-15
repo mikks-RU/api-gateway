@@ -13,7 +13,7 @@ import java.io.IOException;
 public class CustomResponseErrorHandler extends DefaultResponseErrorHandler implements ResponseErrorHandler {
     @Override
     public boolean hasError(ClientHttpResponse response) throws IOException {
-        log.error("Ошибка при вызове внешнего сервиса: " + response.getStatusText());
+//        log.error("Ошибка при вызове внешнего сервиса: " + response.getStatusText());
 
         // Не считать ответ ошибочным, чтобы избежать исключений
         return false;
