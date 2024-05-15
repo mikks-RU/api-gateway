@@ -35,5 +35,4 @@ public class RedirectCache {
     public RedirectEndpoint getRedirect(String sourcePath) {
         return caffeineCache.getIfPresent(sourcePath);
     }
-
 }
